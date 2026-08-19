@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 
-const REPORT_PATH = './lighthouse-report.json';
+const REPORT_PATH = './lighthouse-report.report.json';
 const ISSUE_LABEL = 'lighthouse-report';
 const ISSUE_TITLE_PREFIX = 'Lighthouse Report';
 

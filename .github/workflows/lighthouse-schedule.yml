@@ -78,8 +78,8 @@ jobs:
         with:
           name: lighthouse-report
           path: |
-            lighthouse-report.json
-            lighthouse-report.html
+            lighthouse-report.report.json
+            lighthouse-report.report.html
           retention-days: 7
 
       - name: Ensure lighthouse-report label exists
@@ -104,7 +104,7 @@ jobs:
         run: |
           node -e "
             const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('lighthouse-report.json', 'utf8'));
+            const report = JSON.parse(fs.readFileSync('lighthouse-report.report.json', 'utf8'));
             const performance = Math.round(report.categories.performance.score * 100);
             console.log('Performance score:', performance);
             if (performance < 90) {
