@@ -18,7 +18,7 @@ function getRepoInfo() {
 }
 
 function getGitHubToken() {
-  return process.env.GITHUB_TOKEN || '';
+  return (process.env.GITHUB_TOKEN || '').trim();
 }
 
 async function githubApi(path, options = {}) {
@@ -27,12 +27,14 @@ async function githubApi(path, options = {}) {
   const url = `https://api.github.com/repos/${owner}/${repo}${path}`;
 
   console.log(`DEBUG: Calling ${url}`);
-  console.log(`DEBUG: Token available: ${!!token}, length: ${token.length}`);
+  console.log(`DEBUG: Token length: ${token.length}`);
+  console.log(`DEBUG: Token prefix: ${token.substring(0, 10)}...`);
 
   const res = await fetch(url, {
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `token ${token}`,
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'Lighthouse-Schedule-Workflow',
       ...(options.headers || {}),
     },
     ...options,
