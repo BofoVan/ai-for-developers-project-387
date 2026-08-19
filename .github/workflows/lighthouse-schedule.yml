@@ -85,6 +85,7 @@ jobs:
       - name: Generate Lighthouse Issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/generate-lighthouse-issue.cjs
 
       - name: Check Performance threshold

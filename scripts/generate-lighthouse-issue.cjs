@@ -139,7 +139,7 @@ function execGh(args) {
     return execSync(`gh ${args}`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
+      env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN || process.env.GITHUB_TOKEN },
     });
   } catch (err) {
     throw new Error(`gh command failed: ${err.stderr || err.message}`);
