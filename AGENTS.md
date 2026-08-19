@@ -163,7 +163,7 @@ GitHub Actions workflows live in `.github/workflows/`:
   6. Generates/updates GitHub Issue `#lighthouse-report` with markdown summary
   7. **Fails the workflow** if Performance score < 90
 - **Issue format**: Table with scores, previous scores comparison (↑↓), links to artifacts, and list of failing audits when Performance < 90
-- **Script**: `scripts/generate-lighthouse-issue.js` — parses JSON report, compares with previous run (extracted from existing Issue body), creates or updates Issue via GitHub API
+- **Script**: `scripts/generate-lighthouse-issue.cjs` — parses JSON report, compares with previous run (extracted from existing Issue body), creates or updates Issue via GitHub API
 - **Permissions required**: `contents: read`, `issues: write`, `actions: read`
 
 ---
