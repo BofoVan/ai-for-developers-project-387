@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Generate or update a GitHub Issue with Lighthouse report summary.
+ * Generate or update a GitHub Issue with Lighthouse report summary using gh CLI.
  * Compares current scores with previous run (extracted from the existing Issue body).
  */
 
+const { execSync } = require('child_process');
 const fs = require('fs');
 
 const REPORT_PATH = './lighthouse-report.report.json';
@@ -11,42 +12,6 @@ const ISSUE_LABEL = 'lighthouse-report';
 const ISSUE_TITLE_PREFIX = 'Lighthouse Report';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getRepoInfo() {
-  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
-  return { owner, repo };
-}
-
-function getGitHubToken() {
-  return (process.env.GITHUB_TOKEN || '').trim();
-}
-
-async function githubApi(path, options = {}) {
-  const { owner, repo } = getRepoInfo();
-  const token = getGitHubToken();
-  const url = `https://api.github.com/repos/${owner}/${repo}${path}`;
-
-  console.log(`DEBUG: Calling ${url}`);
-  console.log(`DEBUG: Token length: ${token.length}`);
-  console.log(`DEBUG: Token prefix: ${token.substring(0, 10)}...`);
-
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'User-Agent': 'Lighthouse-Schedule-Workflow',
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GitHub API ${path} failed: ${res.status} ${text}`);
-  }
-
-  return res.json();
-}
 
 function formatDate() {
   const now = new Date();
@@ -67,7 +32,7 @@ function deltaArrow(delta) {
   return '0';
 }
 
-// Extract previous scores from an existing Issue body using simple regex
+// Extract previous scores from an existing Issue body
 function extractPreviousScores(body) {
   const scores = {};
   const lines = body.split('\n');
@@ -167,15 +132,45 @@ function buildIssueBody(report, previousScores, runUrl, artifactUrl) {
   return body;
 }
 
+// ─── gh CLI Helpers ─────────────────────────────────────────────────────────
+
+function execGh(args) {
+  try {
+    return execSync(`gh ${args}`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
+    });
+  } catch (err) {
+    throw new Error(`gh command failed: ${err.stderr || err.message}`);
+  }
+}
+
+function findExistingIssue() {
+  try {
+    const result = execGh(`issue list --label "${ISSUE_LABEL}" --state open --json number,body --jq '.[0]'`);
+    if (!result.trim() || result.trim() === 'null') return null;
+    return JSON.parse(result);
+  } catch (err) {
+    console.warn('Could not find existing Issue:', err.message);
+    return null;
+  }
+}
+
+function createIssue(title, body, labels) {
+  const labelsArg = labels.map(l => `--label "${l}"`).join(' ');
+  const result = execGh(`issue create --title "${title}" --body "${body}" ${labelsArg}`);
+  console.log('Created Issue:', result.trim());
+}
+
+function updateIssue(number, body) {
+  execGh(`issue edit ${number} --body "${body}"`);
+  console.log(`Updated Issue #${number}`);
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const token = getGitHubToken();
-  if (!token) {
-    console.error('GITHUB_TOKEN is not set');
-    process.exit(1);
-  }
-
   if (!fs.existsSync(REPORT_PATH)) {
     console.error(`Lighthouse report not found: ${REPORT_PATH}`);
     process.exit(1);
@@ -183,61 +178,29 @@ async function main() {
 
   const report = JSON.parse(fs.readFileSync(REPORT_PATH, 'utf8'));
 
-  // Build run and artifact URLs
-  const { owner, repo } = getRepoInfo();
+  // Build URLs
+  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
   const runId = process.env.GITHUB_RUN_ID;
   const runUrl = runId ? `https://github.com/${owner}/${repo}/actions/runs/${runId}` : null;
   const artifactUrl = runId
     ? `https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts`
     : null;
 
-  // Find existing Issue with our label
-  let existingIssue = null;
+  // Find existing Issue
   let previousScores = {};
-  try {
-    const issues = await githubApi(`/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=open&per_page=1`);
-    if (issues.length > 0) {
-      existingIssue = issues[0];
-      previousScores = extractPreviousScores(existingIssue.body || '');
-      console.log('Found existing Issue #' + existingIssue.number);
-      console.log('Previous scores:', previousScores);
-    }
-  } catch (err) {
-    console.warn('Could not search for existing Issue:', err.message);
+  const existingIssue = findExistingIssue();
+  if (existingIssue) {
+    previousScores = extractPreviousScores(existingIssue.body || '');
+    console.log('Found existing Issue #' + existingIssue.number);
+    console.log('Previous scores:', previousScores);
   }
 
   const body = buildIssueBody(report, previousScores, runUrl, artifactUrl);
 
   if (existingIssue) {
-    // Update existing Issue
-    try {
-      await githubApi(`/issues/${existingIssue.number}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body }),
-      });
-      console.log(`Updated Issue #${existingIssue.number}`);
-    } catch (err) {
-      console.error('Failed to update Issue:', err.message);
-      process.exit(1);
-    }
+    updateIssue(existingIssue.number, body);
   } else {
-    // Create new Issue
-    try {
-      const newIssue = await githubApi('/issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `${ISSUE_TITLE_PREFIX} — ${formatDate()}`,
-          body,
-          labels: [ISSUE_LABEL],
-        }),
-      });
-      console.log(`Created Issue #${newIssue.number}`);
-    } catch (err) {
-      console.error('Failed to create Issue:', err.message);
-      process.exit(1);
-    }
+    createIssue(`${ISSUE_TITLE_PREFIX} — ${formatDate()}`, body, [ISSUE_LABEL]);
   }
 }
 
