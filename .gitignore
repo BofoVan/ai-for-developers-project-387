@@ -1,0 +1,18 @@
+# MacOS
+.DS_Store
+
+# Default TypeSpec output
+tsp-output/
+dist/
+
+# Dependency directories
+node_modules/
+
+# IDE
+.idea/
+
+# Testing / Playwright / Screenshots
+.playwright-mcp/
+*.png
+*.snap.md
+landing-page-snapshot.md
