@@ -1,0 +1,102 @@
+name: Lighthouse Schedule
+
+on:
+  schedule:
+    - cron: '0 23 * * *' # 23:00 UTC = 02:00 MSK
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Moscow
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci
+
+      - name: Install frontend dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Copy frontend build to backend public
+        run: |
+          mkdir -p backend/public
+          cp -r frontend/dist/* backend/public/
+
+      - name: Start backend
+        run: |
+          cd backend
+          nohup npm start > backend.log 2>&1 &
+          echo "Backend PID: $!"
+          sleep 3
+          curl -s -o /dev/null -w "%{http_code}" http://localhost:4010/api/event-types || true
+
+      - name: Install Lighthouse
+        run: npm install -g lighthouse
+
+      - name: Run Lighthouse
+        run: |
+          lighthouse http://localhost:4010/ \
+            --preset=desktop \
+            --output=json \
+            --output=html \
+            --output-path=./lighthouse-report \
+            --chrome-flags="--headless --no-sandbox --disable-gpu" \
+            --max-wait-for-load=60000
+
+      - name: Upload Lighthouse report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: |
+            lighthouse-report.json
+            lighthouse-report.html
+          retention-days: 7
+
+      - name: Generate Lighthouse Issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/generate-lighthouse-issue.cjs
+
+      - name: Check Performance threshold
+        run: |
+          node -e "
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('lighthouse-report.json', 'utf8'));
+            const performance = Math.round(report.categories.performance.score * 100);
+            console.log('Performance score:', performance);
+            if (performance < 90) {
+              console.error('❌ Performance score ' + performance + ' is below threshold 90');
+              process.exit(1);
+            }
+            console.log('✅ Performance score ' + performance + ' meets threshold 90');
+          "

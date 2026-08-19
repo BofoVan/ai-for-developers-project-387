@@ -144,12 +144,27 @@ GitHub Actions workflows live in `.github/workflows/`:
 | `ci.yml` | push / PR to `main` | `commitlint`, `backend-unit-tests`, `e2e-integration` |
 | `hexlet-check.yml` | push / tags | Hexlet auto-check (**do not edit**) |
 | `release-please.yml` | push to `main` | Generates release PRs |
+| `lighthouse-schedule.yml` | `schedule` (02:00 MSK) + `workflow_dispatch` | Lighthouse audit + GitHub Issue report |
 
 ### E2E in CI
 - Runs against the **real Express backend** (not Prism)
 - Backend state is seeded automatically by `e2e/globalSetup.ts`
 - `TZ=Europe/Moscow` is set so calendar slots align with test assertions
 - Playwright artifacts (screenshots, traces) are uploaded on failure and kept for **1 day**
+
+### Lighthouse Schedule
+- **Trigger**: `schedule` (`0 23 * * *` UTC = 02:00 MSK) + `workflow_dispatch` (manual)
+- **What it does**:
+  1. Builds frontend (`cd frontend && npm run build`)
+  2. Copies `frontend/dist/*` to `backend/public/`
+  3. Starts backend (`npm start`) — serves API + SPA on port `4010`
+  4. Runs Lighthouse CLI (`lighthouse http://localhost:4010/`) with `--preset=desktop`
+  5. Uploads HTML + JSON reports as artifacts (retention: **7 days**)
+  6. Generates/updates GitHub Issue `#lighthouse-report` with markdown summary
+  7. **Fails the workflow** if Performance score < 90
+- **Issue format**: Table with scores, previous scores comparison (↑↓), links to artifacts, and list of failing audits when Performance < 90
+- **Script**: `scripts/generate-lighthouse-issue.js` — parses JSON report, compares with previous run (extracted from existing Issue body), creates or updates Issue via GitHub API
+- **Permissions required**: `contents: read`, `issues: write`, `actions: read`
 
 ---
 
